@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.ExperimentalPagingApi
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
-import androidx.paging.compose.LazyPagingItems
 import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -60,6 +59,7 @@ class MainViewModel(
             PagingConfig(PAGE_SIZE, initialLoadSize = PAGE_SIZE),
             remoteMediator = ChatMediator(isRead = isRead, db.localChatDao(), db.remoteChatDao())
         ) {
+            println("Fetch from local isread:$isRead")
             if (isRead)
                 db.localChatDao().getUnread()
             else

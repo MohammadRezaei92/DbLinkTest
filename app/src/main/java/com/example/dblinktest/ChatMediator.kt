@@ -12,6 +12,14 @@ class ChatMediator(
     private val remoteDataSource: RemoteChatDao
 ): RemoteMediator<Int, LocalChat>() {
 
+    override suspend fun initialize(): InitializeAction {
+        val firstItem = localDataSource.getFirstItem()
+        return if (firstItem == null)
+            InitializeAction.LAUNCH_INITIAL_REFRESH
+        else
+            InitializeAction.SKIP_INITIAL_REFRESH
+    }
+
     override suspend fun load(loadType: LoadType, state: PagingState<Int, LocalChat>): MediatorResult {
        val remoteData = when(loadType) {
             LoadType.REFRESH -> {
