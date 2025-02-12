@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Random
 
+@OptIn(ExperimentalPagingApi::class)
 class MainViewModel(
     context: Context
 ) : ViewModel() {
@@ -30,15 +31,39 @@ class MainViewModel(
 
     init {
         viewModelScope.launch(Dispatchers.IO) { insertDummyData() }
+        insertToRemotePeriodically()
     }
 
     val remoteChats = db.remoteChatDao().getAll()
+
+    private val allPager by lazy {
+        Pager(
+            PagingConfig(PAGE_SIZE, initialLoadSize = PAGE_SIZE),
+            remoteMediator = ChatMediator(showUnreadOnly = false, db.localChatDao(), db.remoteChatDao())
+        ) {
+            println("Fetch all from local")
+            db.localChatDao().getAll()
+        }
+    }
+
+    private val unreadPager by lazy {
+        Pager(
+            PagingConfig(PAGE_SIZE, initialLoadSize = PAGE_SIZE),
+            remoteMediator = ChatMediator(showUnreadOnly = true, db.localChatDao(), db.remoteChatDao())
+        ) {
+            println("Fetch Unread from local")
+            db.localChatDao().getUnread()
+        }
+    }
+
+    fun getPager(shoUnreadOnly: Boolean) =
+        if (shoUnreadOnly) unreadPager else allPager
 
     private suspend fun insertDummyData() {
         val count = db.remoteChatDao().getCount()
         if (count != 0) return
         val list = mutableListOf<RemoteChat>()
-        repeat(5000) { loop ->
+        repeat(1000) { loop ->
             delay(1)
             list.add(
                 RemoteChat(
@@ -52,18 +77,22 @@ class MainViewModel(
         db.remoteChatDao().insertAll(list)
     }
 
-    @OptIn(ExperimentalPagingApi::class)
-    fun getLocalListPage(isRead: Boolean?): Pager<Int, LocalChat>? {
-        if (isRead == null) return null
-        return Pager(
-            PagingConfig(PAGE_SIZE, initialLoadSize = PAGE_SIZE),
-            remoteMediator = ChatMediator(isRead = isRead, db.localChatDao(), db.remoteChatDao())
-        ) {
-            println("Fetch from local isread:$isRead")
-            if (isRead)
-                db.localChatDao().getUnread()
-            else
-                db.localChatDao().getAll()
+    private fun insertToRemotePeriodically() {
+        viewModelScope.launch {
+            while (true) {
+                delay(10000)
+                val id = db.remoteChatDao().getCount()
+                db.remoteChatDao().insertAll(
+                    listOf(
+                        RemoteChat(
+                            uid = id,
+                            timeStamp = System.currentTimeMillis(),
+                            "Chat #$id",
+                            isRead = Random().nextBoolean()
+                        )
+                    )
+                )
+            }
         }
     }
 }

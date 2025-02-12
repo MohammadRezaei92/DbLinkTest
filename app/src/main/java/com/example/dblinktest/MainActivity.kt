@@ -32,10 +32,11 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.paging.compose.LazyPagingItems
+import androidx.paging.Pager
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import com.example.dblinktest.ui.theme.DbLinkTestTheme
+import kotlin.math.absoluteValue
 
 class MainActivity : ComponentActivity() {
     lateinit var viewmodel: MainViewModel
@@ -49,21 +50,21 @@ class MainActivity : ComponentActivity() {
         })[MainViewModel::class]
 
         setContent {
-            var isRead: Boolean? by remember { mutableStateOf(null) }
+            var showUnreadOnly: Boolean by remember { mutableStateOf(false) }
             val remoteChat by viewmodel.remoteChats.collectAsState(emptyList())
-            val localChat = viewmodel.getLocalListPage(isRead)?.flow?.collectAsLazyPagingItems()
 
             DbLinkTestTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Data(
                         modifier = Modifier.padding(innerPadding),
                         remoteList = remoteChat,
-                        localList = localChat,
+                        localList = viewmodel.getPager(showUnreadOnly),
+                        showUnreadOnly = showUnreadOnly,
                         showAll = {
-                            isRead = false
+                            showUnreadOnly = false
                         },
                         showUnread = {
-                            isRead = true
+                            showUnreadOnly = true
                         }
                     )
                 }
@@ -79,10 +80,13 @@ class MainActivity : ComponentActivity() {
 fun Data(
     modifier: Modifier = Modifier,
     remoteList: List<RemoteChat>,
-    localList: LazyPagingItems<LocalChat>?,
+    localList: Pager<Int, LocalChat>,
+    showUnreadOnly: Boolean,
     showAll: () -> Unit,
     showUnread: () -> Unit
 ) {
+    val localPaging = localList.flow.collectAsLazyPagingItems()
+
     Row(
         modifier = modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -117,19 +121,38 @@ fun Data(
             }
         }
 
-        localList?.let {
-            LazyColumn(
-                modifier = Modifier.weight(1f)
-            ) {
-                stickyHeader {
-                    Text(
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface),
-                        text = "Remote data (${localList.itemCount})"
-                    )
-                }
 
-                items(localList.itemCount, localList.itemKey { it.uid }) { index ->
-                    val chat = localList[index]
+        LazyColumn(
+            modifier = Modifier.weight(1f)
+        ) {
+            stickyHeader {
+                Text(
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surface),
+                    text = "Remote data (${localPaging.itemCount})"
+                )
+            }
+                items(localPaging.itemCount, localPaging.itemKey { it.uid }) { index ->
+                    val chat = localPaging[index]
+
+                    // Add missing items
+                    if (chat != null && index > 0 && showUnreadOnly.not()) {
+                        val prevItem = localPaging.peek(index - 1)
+                        val diff = chat.uid.minus(prevItem?.uid ?: 0).plus(1).absoluteValue
+                        repeat(diff) { missIndex ->
+                            ChatItem(
+                                modifier = Modifier.fillMaxWidth(),
+                                chat = LocalChat(
+                                    uid = missIndex,
+                                    timeStamp = 0,
+                                    content = "Chat #${chat.uid.minus(missIndex - diff)} is Missed",
+                                    isRead = false,
+                                    nextTimeStamp = 0
+                                ),
+                                background = Color.Red
+                            )
+                        }
+                    }
+
                     chat?.let {
                         ChatItem(
                             modifier = Modifier.fillMaxWidth(),
@@ -137,18 +160,21 @@ fun Data(
                         )
                     }
                 }
-            }
         }
     }
 }
 
 
 @Composable
-fun ChatItem(modifier: Modifier = Modifier, chat: Chat) {
+fun ChatItem(
+    modifier: Modifier = Modifier,
+    chat: Chat,
+    background: Color? = null
+) {
     ElevatedCard(
         modifier = modifier.padding(8.dp),
         colors = CardDefaults.elevatedCardColors(
-            containerColor = if (chat.isRead) Color.Gray else Color.DarkGray
+            containerColor = background ?: if (chat.isRead) Color.DarkGray else Color.Gray
         )
     ) {
         Column(
